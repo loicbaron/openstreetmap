@@ -1,23 +1,46 @@
 ## Open Street Map
 library(osmdata)
+library(sf)
+library(stringr)
 
 locations <- readRDS("data/objects/locations")
 
-get_osm <- function(loc_name, loc_geo, key, value, features_type) {
-  cat("get osm features for: ", loc_name, "\n")
-  result <- opq(bbox = st_bbox(loc_geo), timeout = 100) %>%
-    add_osm_feature(key, value) %>%
-    osmdata_sf() %>%
-    unname_osmdata_sf()
+# This can ERROR with HTTP 504
+# Saving each location as an object
+# we can re-run the code and skip if we already have it stored
+get_osm <- function(loc_code, loc_name, loc_geo, key, value, features_type) {
+  f <- str_glue("data/objects/{loc_code}")
+  if (file.exists(f) == TRUE) {
+    cat("already have features for: ", loc_name, "\n")
+    result <- readRDS(f)
+  } else {
+    cat("get osm features for: ", loc_name, "\n")
+    result <- opq(bbox = st_bbox(loc_geo), timeout = 1000) %>%
+      add_osm_feature(key, value) %>%
+      osmdata_sf() %>%
+      unname_osmdata_sf()
+    saveRDS(result, f)
+  }
   return(result)
 }
 
 emergency_services <- c("hospital", "police", "fire_station")
-osm_emergency <- get_osm(locations$ADM2_VI[1], locations$geometry[1], "amenity", emergency_services)
+osm_emergency <- get_osm(
+  locations$GEOLEVEL2[1],
+  locations$ADM2_VI[1],
+  locations$geometry[1],
+  "amenity",
+  emergency_services
+  )
 er <- st_intersection(osm_emergency$osm_polygons, locations$geometry[1])
 nb_er <- nrow(as.data.frame(er))
 C_GOV2 <- nb_er / locations$pop[1] * 100000
 st_write(er, "output/er_polygons.shp", layer_options = "ENCODING=UTF-8", append=FALSE)
 
-# This ERRORS with HTTP 504
-emergencies <- mapply(get_osm, locations$ADM2_VI, locations$geometry, "amenity", emergency_services)
+emergencies <- mapply(get_osm,
+                      locations$GEOLEVEL2,
+                      locations$ADM2_VI,
+                      locations$geometry,
+                      "amenity",
+                      emergency_services
+                      )

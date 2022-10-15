@@ -3,12 +3,16 @@ library(osmdata)
 library(sf)
 library(stringr)
 
+normalize_minmax <- function(x, ...) {
+  return((x - min(x, ...)) /(max(x, ...) - min(x, ...)))
+}
+
 locations <- readRDS("data/objects/locations")
 
 # This can ERROR with HTTP 504
 # Saving each location as an object
 # we can re-run the code and skip if we already have it stored
-get_osm <- function(loc_code, loc_name, loc_geo, key, value, features_type) {
+get_osm <- function(loc_code, loc_name, loc_geo, key, value) {
   f <- str_glue("data/objects/{loc_code}")
   if (file.exists(f) == TRUE) {
     cat("already have features for: ", loc_name, "\n")
@@ -25,29 +29,21 @@ get_osm <- function(loc_code, loc_name, loc_geo, key, value, features_type) {
 }
 
 emergency_services <- c("hospital", "police", "fire_station")
-osm_emergency <- get_osm(
-  locations$GEOLEVEL2[1],
-  locations$ADM2_VI[1],
-  locations$geometry[1],
-  "amenity",
-  emergency_services
+
+for (i in 1:nrow(locations)) {
+  osm_data <- get_osm(
+    locations$GEOLEVEL2[i],
+    locations$ADM2_VI[i],
+    locations$geometry[i],
+    "amenity",
+    emergency_services
   )
-er <- st_intersection(osm_emergency$osm_polygons, locations$geometry[1])
-nb_er <- nrow(as.data.frame(er))
-C_GOV2 <- nb_er / locations$pop[1] * 100000
-st_write(er, "output/er_polygons.shp", layer_options = "ENCODING=UTF-8", append=FALSE)
-
-
-# Error in `[[<-.data.frame`(`*tmp*`, i, value = list("20.979242,105.716335,21.10758,105.804311",  :
-# replacement has 8 rows, data has 391
-# In addition: Warning message:
-#   In mapply(get_osm, locations$GEOLEVEL2, locations$ADM2_VI, locations$geometry,  :
-#               longer argument not a multiple of length of shorter
-locations$emergencies <- mapply(get_osm,
-                      locations$GEOLEVEL2,
-                      locations$ADM2_VI,
-                      locations$geometry,
-                      "amenity",
-                      emergency_services
-                      )
-
+  features <- st_intersection(locations$geometry[i], osm_data$osm_points)
+  locations$cnt[i] <- nrow(as.data.frame(features))
+}
+locations$freq <- locations$cnt / locations$pop * 1000
+locations$norm <- normalize_minmax(locations$freq, na.rm = TRUE)
+# C_GOV2
+# Access to emergency services: hospitals, fire brigades, police stations
+# Proxy: Density of  emergency services: hospitals, fire brigades, police stations per 1,000 inhabitants
+st_write(locations, "output/emergencies_C_GOV2.shp", layer_options = "ENCODING=UTF-8", append=FALSE)

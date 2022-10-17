@@ -22,13 +22,14 @@ get_osm <- function(loc_code, loc_name, loc_geo, key, value) {
     osm_features <- opq(bbox = st_bbox(loc_geo), timeout = 1000) %>%
       add_osm_feature(key, value) %>%
       osmdata_sf() %>%
-      unname_osmdata_sf()
+      unique_osmdata()
+      # unname_osmdata_sf() # this is to resolve plotting issues
     saveRDS(osm_features, f)
   }
   return(osm_features)
 }
 
-emergency_services <- c("hospital", "police", "fire_station")
+emergency_services <- c("hospital", "clinic", "police", "fire_station")
 
 for (i in 1:nrow(locations)) {
   osm_data <- get_osm(
@@ -38,8 +39,22 @@ for (i in 1:nrow(locations)) {
     "amenity",
     emergency_services
   )
-  features <- st_intersection(locations$geometry[i], osm_data$osm_points)
-  locations$cnt[i] <- nrow(as.data.frame(features))
+  print(osm_data)
+  cnt <- 0
+  if (!is.null(osm_data$osm_points)) {
+    features_points <- st_intersection(locations$geometry[i], osm_data$osm_points)
+    cnt <- cnt + nrow(as.data.frame(features_points))
+  }
+  if (!is.null(osm_data$osm_polygons)) {
+    features_polygons <- st_intersection(locations$geometry[i], osm_data$osm_polygons)
+    cnt <- cnt + nrow(as.data.frame(features_polygons))
+  }
+  if (!is.null(osm_data$osm_multipolygons)) {
+    features_multipolygons <- st_intersection(locations$geometry[i], osm_data$osm_multipolygons)
+    cnt <- cnt + nrow(as.data.frame(features_multipolygons))
+  }
+
+  locations$cnt[i] <- cnt
 }
 locations$freq <- locations$cnt / locations$pop * 1000
 locations$norm <- normalize_minmax(locations$freq, na.rm = TRUE)
